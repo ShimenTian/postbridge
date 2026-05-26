@@ -1,0 +1,19 @@
+{
+  "name": "youmind-wechat-exporter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "lucide": "^0.468.0",
+    "marked": "^15.0.6"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7"
+  }
+}
