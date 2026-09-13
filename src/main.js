@@ -487,6 +487,7 @@ function decorateCodeBlocks(root, theme) {
     const code = doc.createElement('code');
 
     setStyle(card, {
+      maxWidth: '100%',
       margin: '24px 0',
       borderRadius: '10px',
       overflow: 'hidden',
@@ -542,20 +543,27 @@ function decorateCodeBlocks(root, theme) {
       fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
       fontSize: `${Math.max(state.fontSize - 1, 14)}px`,
       lineHeight: '1.82',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
-      overflowWrap: 'break-word'
+      whiteSpace: 'pre',
+      wordBreak: 'normal',
+      overflowWrap: 'normal',
+      tabSize: '2'
     });
 
     setStyle(codeBody, {
+      display: 'block',
+      maxWidth: '100%',
       margin: '0',
       padding: '20px 22px 22px',
       borderRadius: '0',
       background: '#282d35',
       color: '#b8bfcc',
       overflowX: 'auto',
+      overflowY: 'hidden',
       lineHeight: '1.82',
-      whiteSpace: 'pre-wrap'
+      whiteSpace: 'pre',
+      wordBreak: 'normal',
+      overflowWrap: 'normal',
+      WebkitOverflowScrolling: 'touch'
     });
 
     header.append(controls);
