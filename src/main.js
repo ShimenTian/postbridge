@@ -96,7 +96,8 @@ const state = {
   markdown: DEFAULT_MARKDOWN,
   theme: 'clean',
   accent: THEMES.clean.accent,
-  fontSize: 16
+  fontSize: 16,
+  codeMode: 'scroll'
 };
 
 const app = document.querySelector('#app');
@@ -159,6 +160,13 @@ app.innerHTML = `
               <option value="18">18</option>
             </select>
           </label>
+          <label class="control">
+            <span id="codeModeLabel">代码</span>
+            <select id="codeModeSelect">
+              <option value="scroll" selected>可复制</option>
+              <option value="image">图片</option>
+            </select>
+          </label>
         </div>
       </div>
       <textarea id="markdownInput" spellcheck="false"></textarea>
@@ -186,6 +194,7 @@ const els = {
   themeSelect: document.querySelector('#themeSelect'),
   accentInput: document.querySelector('#accentInput'),
   fontSizeSelect: document.querySelector('#fontSizeSelect'),
+  codeModeSelect: document.querySelector('#codeModeSelect'),
   copyRichButton: document.querySelector('#copyRichButton'),
   copyHtmlButton: document.querySelector('#copyHtmlButton'),
   downloadButton: document.querySelector('#downloadButton'),
@@ -199,6 +208,7 @@ const els = {
 els.themeSelect.setAttribute('aria-labelledby', 'themeLabel');
 els.accentInput.setAttribute('aria-labelledby', 'accentLabel');
 els.fontSizeSelect.setAttribute('aria-labelledby', 'fontSizeLabel');
+els.codeModeSelect.setAttribute('aria-labelledby', 'codeModeLabel');
 els.markdownInput.value = state.markdown;
 createIcons({
   icons: {
@@ -233,6 +243,11 @@ els.fontSizeSelect.addEventListener('change', () => {
   render();
 });
 
+els.codeModeSelect.addEventListener('change', () => {
+  state.codeMode = els.codeModeSelect.value;
+  showToast(state.codeMode === 'image' ? '复制时使用代码图片' : '复制时保留可滚动代码');
+});
+
 els.resetButton.addEventListener('click', () => {
   state.markdown = DEFAULT_MARKDOWN;
   els.markdownInput.value = state.markdown;
@@ -248,8 +263,8 @@ els.clearButton.addEventListener('click', () => {
 });
 
 els.copyRichButton.addEventListener('click', async () => {
-  const html = buildWechatHtml();
-  const text = els.previewContent.innerText.trim();
+  const html = await buildWechatClipboardHtml();
+  const text = els.previewContent.innerText.replace(/\u00a0/g, ' ').trim();
 
   try {
     if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -262,7 +277,7 @@ els.copyRichButton.addEventListener('click', async () => {
     } else {
       copyPreviewSelection();
     }
-    showToast('已复制富文本');
+    showToast(state.codeMode === 'image' ? '已复制富文本，代码块已转为图片' : '已复制可滚动代码');
   } catch (error) {
     copyPreviewSelection();
     showToast('已复制预览内容');
@@ -306,6 +321,35 @@ function buildWechatHtml() {
   applyArticleStyles(wrapper, theme);
   decorateCodeBlocks(wrapper, theme);
   return wrapper.outerHTML;
+}
+
+async function buildWechatClipboardHtml() {
+  if (state.codeMode !== 'image') {
+    return buildWechatHtml();
+  }
+
+  const theme = { ...THEMES[state.theme], accent: state.accent };
+  const doc = document.implementation.createHTMLDocument('wechat-clipboard');
+  const container = doc.createElement('div');
+  container.innerHTML = buildWechatHtml();
+
+  await Promise.all([...container.querySelectorAll('[data-code-block="true"]')].map(async (card) => {
+    const codeText = card.getAttribute('data-code-source') || '';
+    const image = doc.createElement('img');
+    image.src = renderCodeBlockImage(codeText, theme);
+    image.alt = `代码块：${codeText}`;
+    setStyle(image, {
+      display: 'block',
+      width: '100%',
+      maxWidth: '669px',
+      height: 'auto',
+      margin: '24px auto',
+      borderRadius: '10px'
+    });
+    card.replaceWith(image);
+  }));
+
+  return container.firstElementChild?.outerHTML || '';
 }
 
 function applyArticleStyles(root, theme) {
@@ -486,23 +530,38 @@ function decorateCodeBlocks(root, theme) {
     const codeBody = doc.createElement('pre');
     const code = doc.createElement('code');
 
+    card.setAttribute('data-code-block', 'true');
+    card.setAttribute('data-code-source', codeText);
+
     setStyle(card, {
       maxWidth: '100%',
       margin: '24px 0',
       borderRadius: '10px',
       overflow: 'hidden',
       background: '#282d35',
+      backgroundColor: '#282d35',
       border: '1px solid #1a1f26',
       boxShadow: '0 10px 24px rgba(17, 24, 39, 0.18)'
     });
+    card.style.setProperty('background-color', '#282d35', 'important');
+    card.style.setProperty('border-radius', '10px', 'important');
+    card.style.setProperty('overflow', 'hidden', 'important');
 
     setStyle(header, {
+      display: 'block',
+      boxSizing: 'border-box',
+      width: '100%',
       padding: '15px 20px 13px',
       background: '#20252c',
+      backgroundColor: '#20252c',
       borderBottom: '1px solid #171c22',
+      borderRadius: '10px 10px 0 0',
       lineHeight: '1',
       textAlign: 'left'
     });
+    header.style.setProperty('background', '#20252c', 'important');
+    header.style.setProperty('background-color', '#20252c', 'important');
+    header.style.setProperty('border-radius', '10px 10px 0 0', 'important');
 
     setStyle(controls, {
       display: 'inline-block',
@@ -533,43 +592,145 @@ function decorateCodeBlocks(root, theme) {
       controls.append(dot);
     });
 
-    code.textContent = codeText;
-    setStyle(code, {
-      display: 'block',
-      padding: '0',
-      borderRadius: '0',
-      background: 'transparent',
-      color: '#b8bfcc',
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-      fontSize: `${Math.max(state.fontSize - 1, 14)}px`,
-      lineHeight: '1.82',
-      whiteSpace: 'pre',
-      wordBreak: 'normal',
-      overflowWrap: 'normal',
-      tabSize: '2'
-    });
-
     setStyle(codeBody, {
       display: 'block',
+      boxSizing: 'border-box',
+      width: '100%',
+      maxWidth: '100%',
+      margin: '0',
+      padding: '0',
+      borderRadius: '0 0 10px 10px',
+      background: '#282d35',
+      backgroundColor: '#282d35',
+      color: '#b8bfcc',
+      overflow: 'hidden',
+      lineHeight: '1.82'
+    });
+    codeBody.style.setProperty('background', '#282d35', 'important');
+    codeBody.style.setProperty('background-color', '#282d35', 'important');
+    codeBody.style.setProperty('color', '#b8bfcc', 'important');
+    codeBody.style.setProperty('border-radius', '0 0 10px 10px', 'important');
+
+    setStyle(code, {
+      display: '-webkit-box',
+      boxSizing: 'border-box',
+      width: '100%',
       maxWidth: '100%',
       margin: '0',
       padding: '20px 22px 22px',
-      borderRadius: '0',
+      borderRadius: '0 0 10px 10px',
       background: '#282d35',
+      backgroundColor: '#282d35',
       color: '#b8bfcc',
       overflowX: 'auto',
       overflowY: 'hidden',
+      textIndent: '0',
+      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+      fontSize: `${Math.max(state.fontSize - 1, 14)}px`,
       lineHeight: '1.82',
-      whiteSpace: 'pre',
+      whiteSpace: 'nowrap',
       wordBreak: 'normal',
       overflowWrap: 'normal',
+      tabSize: '2',
       WebkitOverflowScrolling: 'touch'
     });
+    code.style.setProperty('display', '-webkit-box', 'important');
+    code.style.setProperty('background', '#282d35', 'important');
+    code.style.setProperty('background-color', '#282d35', 'important');
+    code.style.setProperty('color', '#b8bfcc', 'important');
+    code.style.setProperty('border-radius', '0 0 10px 10px', 'important');
+    code.style.setProperty('overflow-x', 'auto', 'important');
+    code.style.setProperty('white-space', 'nowrap', 'important');
+    code.style.setProperty('word-break', 'normal', 'important');
+    code.style.setProperty('overflow-wrap', 'normal', 'important');
+
+    appendWechatCodeLines(code, codeText);
 
     header.append(controls);
     codeBody.append(code);
     card.append(header, codeBody);
     pre.replaceWith(card);
+  });
+}
+
+function renderCodeBlockImage(codeText, theme) {
+  const lines = codeText.split('\n');
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const scale = 2;
+  const width = 669;
+  const headerHeight = 46;
+  const horizontalPadding = 22;
+  const verticalPadding = 20;
+  const availableTextWidth = width - horizontalPadding * 2;
+  const fontFamily = 'SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
+  let fontSize = Math.max(state.fontSize - 1, 14);
+
+  context.font = `${fontSize}px ${fontFamily}`;
+  const widestLine = Math.max(...lines.map((line) => context.measureText(line || ' ').width));
+  if (widestLine > availableTextWidth) {
+    fontSize = Math.max(9, Math.floor(fontSize * availableTextWidth / widestLine));
+  }
+
+  const lineHeight = Math.max(19, Math.ceil(fontSize * 1.82));
+  const bodyHeight = verticalPadding * 2 + Math.max(lines.length, 1) * lineHeight;
+  const height = headerHeight + bodyHeight;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  context.scale(scale, scale);
+
+  drawRoundedRect(context, 0, 0, width, height, 10);
+  context.fillStyle = '#282d35';
+  context.fill();
+
+  context.save();
+  drawRoundedRect(context, 0, 0, width, headerHeight, 10);
+  context.clip();
+  context.fillStyle = '#20252c';
+  context.fillRect(0, 0, width, headerHeight);
+  context.restore();
+
+  context.fillStyle = '#171c22';
+  context.fillRect(0, headerHeight - 1, width, 1);
+  ['#ff5f57', '#ffbd2e', '#28c840'].forEach((color, index) => {
+    context.beginPath();
+    context.arc(22 + index * 19, 23, 6, 0, Math.PI * 2);
+    context.fillStyle = color;
+    context.fill();
+  });
+
+  context.font = `${fontSize}px ${fontFamily}`;
+  context.textBaseline = 'top';
+  context.fillStyle = theme.codeText === '#f9fafb' ? '#b8bfcc' : theme.codeText;
+  lines.forEach((line, index) => {
+    context.fillText(line || ' ', horizontalPadding, headerHeight + verticalPadding + index * lineHeight);
+  });
+
+  return canvas.toDataURL('image/png');
+}
+
+function drawRoundedRect(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, safeRadius);
+  context.arcTo(x + width, y + height, x, y + height, safeRadius);
+  context.arcTo(x, y + height, x, y, safeRadius);
+  context.arcTo(x, y, x + width, y, safeRadius);
+  context.closePath();
+}
+
+function appendWechatCodeLines(container, codeText) {
+  const doc = container.ownerDocument;
+  const lines = codeText.split('\n');
+
+  lines.forEach((line, index) => {
+    const normalizedLine = line.replace(/\t/g, '  ').replace(/ /g, '\u00a0');
+    container.append(doc.createTextNode(normalizedLine || '\u00a0'));
+
+    if (index < lines.length - 1) {
+      container.append(doc.createElement('br'));
+    }
   });
 }
 
