@@ -106,8 +106,8 @@ app.innerHTML = `
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">微</div>
       <div>
-        <h1>公众号排版导出器</h1>
-        <p>Markdown 转微信公众号富文本</p>
+        <h1>文桥 <span>PostBridge</span></h1>
+        <p>一份 Markdown，适配多个内容平台</p>
       </div>
     </div>
     <div class="topbar-actions">
@@ -302,7 +302,7 @@ function buildWechatHtml() {
   const doc = document.implementation.createHTMLDocument('wechat');
   const wrapper = doc.createElement('section');
   wrapper.innerHTML = safe;
-  wrapper.setAttribute('data-origin', 'youmind-wechat-exporter');
+  wrapper.setAttribute('data-origin', 'postbridge');
   applyArticleStyles(wrapper, theme);
   decorateCodeBlocks(wrapper, theme);
   return wrapper.outerHTML;
