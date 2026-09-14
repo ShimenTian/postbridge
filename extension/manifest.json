@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "文桥长文导入助手",
+  "version": "0.1.1",
+  "description": "将文桥文章包中的正文与代码图片按顺序导入小红书或抖音长文编辑器，由你检查后发布。",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_title": "导入文桥文章"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

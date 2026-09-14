@@ -2,6 +2,8 @@ import DOMPurify from 'dompurify';
 import { Code2, Copy, Download, FileText, Trash2, createIcons } from 'lucide';
 import { marked } from 'marked';
 import './styles.css';
+import { PLATFORMS, buildLongArticle, articleText } from './platforms.js';
+import { buildImportPackage } from './import-package.js';
 
 marked.setOptions({
   gfm: true,
@@ -59,7 +61,7 @@ AI 最适合承担的是整理、联想、初稿和改写。真正决定文章�
 const THEMES = {
   clean: {
     label: '清爽',
-    accent: '#0f766e',
+    accent: '#07C160',
     ink: '#202124',
     muted: '#667085',
     border: '#d8e0dc',
@@ -93,6 +95,7 @@ const THEMES = {
 };
 
 const state = {
+  platform: 'wechat',
   markdown: DEFAULT_MARKDOWN,
   theme: 'clean',
   accent: THEMES.clean.accent,
@@ -105,13 +108,18 @@ const app = document.querySelector('#app');
 app.innerHTML = `
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true">微</div>
+      <div class="brand-mark" aria-hidden="true">桥</div>
       <div>
         <h1>文桥 <span>PostBridge</span></h1>
         <p>一份 Markdown，适配多个内容平台</p>
       </div>
     </div>
     <div class="topbar-actions">
+      <label class="control platform-control">发布平台
+        <select id="platformSelect" aria-label="发布平台">
+          ${Object.entries(PLATFORMS).map(([key, value]) => `<option value="${key}">${value.label}</option>`).join('')}
+        </select>
+      </label>
       <button class="icon-button secondary" type="button" id="resetButton" title="载入示例">
         <i data-lucide="file-text"></i>
       </button>
@@ -126,6 +134,8 @@ app.innerHTML = `
         <i data-lucide="download"></i>
         <span>导出</span>
       </button>
+      <button class="text-button secondary" type="button" id="exportPackageButton" hidden title="配合浏览器导入助手，按顺序导入全文和所有代码图片">导出文章包</button>
+      <button class="text-button secondary" type="button" id="codeImagesButton" hidden>代码图片</button>
       <button class="text-button primary" type="button" id="copyRichButton">
         <i data-lucide="copy"></i>
         <span>复制到公众号</span>
@@ -185,10 +195,17 @@ app.innerHTML = `
     </section>
   </main>
 
+  <dialog id="codeImagesDialog" aria-labelledby="codeImagesTitle">
+    <div class="image-dialog-header"><h2 id="codeImagesTitle">代码图片</h2><button id="closeCodeImagesButton" type="button" class="text-button secondary">关闭</button></div>
+    <p>正文复制保留代码文字。可逐张复制图片到平台；若粘贴失败，下载 PNG 后通过平台的插入图片功能上传，再替换对应代码文字。</p>
+    <p id="codeImagesStatus" role="status" aria-live="polite"></p>
+    <div id="codeImagesList"></div>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 `;
 
 const els = {
+  platformSelect: document.querySelector('#platformSelect'),
   markdownInput: document.querySelector('#markdownInput'),
   previewContent: document.querySelector('#previewContent'),
   themeSelect: document.querySelector('#themeSelect'),
@@ -221,6 +238,11 @@ createIcons({
 });
 render();
 
+els.platformSelect.addEventListener('change', () => {
+  state.platform = els.platformSelect.value;
+  render();
+});
+
 els.markdownInput.addEventListener('input', () => {
   state.markdown = els.markdownInput.value;
   render();
@@ -245,7 +267,8 @@ els.fontSizeSelect.addEventListener('change', () => {
 
 els.codeModeSelect.addEventListener('change', () => {
   state.codeMode = els.codeModeSelect.value;
-  showToast(state.codeMode === 'image' ? '复制时使用代码图片' : '复制时保留可滚动代码');
+  render();
+  showToast(state.platform !== 'wechat' ? '长文正文保留代码文字，图片请使用「代码图片」单独插入' : state.codeMode === 'image' ? '复制正文时自动将代码转为图片' : '复制正文时保留代码文本');
 });
 
 els.resetButton.addEventListener('click', () => {
@@ -263,30 +286,22 @@ els.clearButton.addEventListener('click', () => {
 });
 
 els.copyRichButton.addEventListener('click', async () => {
-  const html = await buildWechatClipboardHtml();
-  const text = els.previewContent.innerText.replace(/\u00a0/g, ' ').trim();
-
+  const platform = state.platform;
+  const codeMode = state.codeMode;
   try {
-    if (navigator.clipboard?.write && window.ClipboardItem) {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([text], { type: 'text/plain' })
-        })
-      ]);
-    } else {
-      copyPreviewSelection();
-    }
-    showToast(state.codeMode === 'image' ? '已复制富文本，代码块已转为图片' : '已复制可滚动代码');
-  } catch (error) {
-    copyPreviewSelection();
-    showToast('已复制预览内容');
-  }
+    const html = await buildPlatformClipboardHtml();
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    await writeClipboard(html, platform === 'wechat' ? articleText(container) : buildLongArticle(state.markdown).text);
+    showToast(platform !== 'wechat' ? '正文已复制，代码文字已保留；图片可从「代码图片」单独插入' : codeMode === 'image' ? '已复制富文本，代码块已转为图片' : '正文已复制，请粘贴到平台正文编辑器');
+  } catch { showToast('复制失败，请重试或导出 HTML'); }
 });
 
 els.copyHtmlButton.addEventListener('click', async () => {
-  await navigator.clipboard.writeText(buildWechatHtml());
-  showToast('HTML 已复制');
+  try {
+    await writeClipboard('', buildPlatformHtml());
+    showToast('HTML 已复制');
+  } catch { showToast('复制失败，请使用导出'); }
 });
 
 els.downloadButton.addEventListener('click', () => {
@@ -294,17 +309,35 @@ els.downloadButton.addEventListener('click', () => {
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `wechat-article-${formatDate(new Date())}.html`;
+  link.download = `${state.platform}-article-${formatDate(new Date())}.html`;
   link.click();
   URL.revokeObjectURL(url);
   showToast('已导出 HTML');
 });
 
 function render() {
-  const html = buildWechatHtml();
-  els.previewContent.innerHTML = html;
+  const platform = PLATFORMS[state.platform];
+  const longForm = state.platform !== 'wechat';
+  els.previewContent.innerHTML = buildPlatformHtml();
+  document.querySelector('#exportPackageButton').hidden = !longForm;
+  document.querySelector('#codeImagesButton').hidden = !longForm || !els.previewContent.querySelector('[data-code-block="true"]');
+  els.codeModeSelect.querySelector('[value="image"]').textContent = longForm ? '图片单独插入' : '图片';
+  els.previewContent.classList.toggle('native-article', longForm);
   els.statsLine.textContent = getStatsText(state.markdown);
-  els.statusLine.textContent = state.markdown.trim() ? '实时同步' : '暂无内容';
+  els.statusLine.textContent = state.markdown.trim() ? `${platform.label} · ${longForm ? '正文结构预览' : '实时同步'}` : '暂无内容';
+  els.copyRichButton.querySelector('span').textContent = platform.copyLabel;
+  [els.themeSelect, els.accentInput, els.fontSizeSelect].forEach(control => {
+    control.disabled = longForm;
+    control.closest('label').hidden = longForm;
+  });
+}
+
+function buildPlatformHtml() {
+  if (state.platform === 'wechat') return buildWechatHtml();
+  const wrapper = document.createElement('section');
+  wrapper.innerHTML = buildLongArticle(state.markdown, null, { preserveCodeBlocks: true }).html;
+  decorateCodeBlocks(wrapper, { ...THEMES[state.theme], accent: state.accent });
+  return wrapper.outerHTML;
 }
 
 function buildWechatHtml() {
@@ -318,23 +351,30 @@ function buildWechatHtml() {
   const wrapper = doc.createElement('section');
   wrapper.innerHTML = safe;
   wrapper.setAttribute('data-origin', 'postbridge');
+  normalizeListParagraphs(wrapper);
   applyArticleStyles(wrapper, theme);
   decorateCodeBlocks(wrapper, theme);
   return wrapper.outerHTML;
 }
 
-async function buildWechatClipboardHtml() {
+async function buildPlatformClipboardHtml() {
+  // Native editors may discard data-URI images and custom code cards.
+  // Keep code as ordinary paragraphs in both clipboard representations.
+  if (state.platform !== 'wechat') return buildLongArticle(state.markdown).html;
+  const html = buildPlatformHtml();
   if (state.codeMode !== 'image') {
-    return buildWechatHtml();
+    return html;
   }
 
   const theme = { ...THEMES[state.theme], accent: state.accent };
-  const doc = document.implementation.createHTMLDocument('wechat-clipboard');
+  const doc = document.implementation.createHTMLDocument('article-clipboard');
   const container = doc.createElement('div');
-  container.innerHTML = buildWechatHtml();
+  container.innerHTML = html;
 
   await Promise.all([...container.querySelectorAll('[data-code-block="true"]')].map(async (card) => {
-    const codeText = card.getAttribute('data-code-source') || '';
+    const codeText = card.tagName === 'PRE'
+      ? card.textContent.replace(/\n$/, '')
+      : card.getAttribute('data-code-source') || '';
     const image = doc.createElement('img');
     image.src = renderCodeBlockImage(codeText, theme);
     image.alt = `代码块：${codeText}`;
@@ -349,7 +389,103 @@ async function buildWechatClipboardHtml() {
     card.replaceWith(image);
   }));
 
-  return container.firstElementChild?.outerHTML || '';
+  return container.innerHTML;
+}
+
+document.querySelector('#exportPackageButton').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = '正在打包…';
+  // Capture the article and style before awaiting any remote images.
+  const markdown = state.markdown;
+  const platform = state.platform;
+  const theme = { ...THEMES[state.theme], accent: state.accent };
+  const fontSize = state.fontSize;
+  try {
+    if (!markdown.trim()) throw new Error('请先填写文章内容');
+    const pack = await buildImportPackage(markdown, platform, code => renderCodeBlockImage(code, theme, fontSize));
+    const blob = new Blob([JSON.stringify(pack)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${platform}-article-${formatDate(new Date())}.postbridge.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`文章包已导出（${pack.assets.length} 张图片），请在平台使用导入助手打开`);
+  } catch (error) { showToast(error.message || '文章打包失败，请重试'); }
+  finally { button.disabled = false; button.textContent = '导出文章包'; }
+});
+
+document.querySelector('#closeCodeImagesButton').addEventListener('click', () => document.querySelector('#codeImagesDialog').close());
+document.querySelector('#codeImagesButton').addEventListener('click', () => {
+  const list = document.querySelector('#codeImagesList');
+  list.replaceChildren();
+  document.querySelector('#codeImagesStatus').textContent = '';
+  const root = document.createElement('div');
+  root.innerHTML = buildPlatformHtml();
+  const theme = { ...THEMES[state.theme], accent: state.accent };
+  root.querySelectorAll('[data-code-block="true"]').forEach((card, index) => {
+    const section = document.createElement('section');
+    const heading = document.createElement('h3');
+    heading.textContent = `代码图片 ${index + 1}`;
+    const image = document.createElement('img');
+    image.src = renderCodeBlockImage(card.getAttribute('data-code-source') || '', theme);
+    image.alt = `代码图片 ${index + 1}`;
+    const copy = document.createElement('button');
+    copy.className = 'text-button secondary';
+    copy.type = 'button';
+    copy.textContent = '复制图片';
+    copy.addEventListener('click', async () => {
+      try {
+        const bytes = Uint8Array.from(atob(image.src.split(',')[1]), char => char.charCodeAt(0));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
+        document.querySelector('#codeImagesStatus').textContent = `代码图片 ${index + 1} 已复制，请在平台粘贴；若未插入，可下载后上传。`;
+        showToast(`代码图片 ${index + 1} 已复制，请在平台粘贴`);
+      } catch {
+        document.querySelector('#codeImagesStatus').textContent = '图片复制失败，请下载 PNG 后在平台上传';
+        showToast('图片复制失败，请下载 PNG 后在平台上传');
+      }
+    });
+    const download = document.createElement('a');
+    download.className = 'text-button secondary';
+    download.textContent = '下载 PNG';
+    download.href = image.src;
+    download.download = `${state.platform}-code-${index + 1}.png`;
+    section.append(heading, image, copy, download);
+    list.append(section);
+  });
+  if (!list.children.length) {
+    showToast('当前文章没有代码块');
+    return;
+  }
+  document.querySelector('#codeImagesDialog').showModal();
+});
+
+function normalizeListParagraphs(root) {
+  // Keep inline runs together when rich-text editors normalize list children.
+  // Existing paragraphs and other blocks retain their original boundaries.
+  const blockTags = new Set([
+    'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DETAILS', 'DIV', 'DL',
+    'FIELDSET', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4',
+    'H5', 'H6', 'HEADER', 'HR', 'MAIN', 'NAV', 'OL', 'P', 'PRE',
+    'SECTION', 'TABLE', 'UL'
+  ]);
+
+  root.querySelectorAll('li').forEach((item) => {
+    let paragraph = null;
+    [...item.childNodes].forEach((node) => {
+      if (node.nodeType === 1 && blockTags.has(node.tagName)) {
+        paragraph = null;
+        return;
+      }
+      if (!paragraph) {
+        if (node.nodeType === 8 || (node.nodeType === 3 && !node.textContent.trim())) return;
+        paragraph = root.ownerDocument.createElement('p');
+        item.insertBefore(paragraph, node);
+      }
+      paragraph.append(node);
+    });
+  });
 }
 
 function applyArticleStyles(root, theme) {
@@ -371,6 +507,11 @@ function applyArticleStyles(root, theme) {
 
     if (styles) {
       setStyle(node, styles);
+    }
+
+    if (tag === 'p' && node.parentElement?.tagName === 'LI') {
+      // List spacing belongs to the item; retain gaps between real paragraphs.
+      node.style.margin = node.nextElementSibling?.tagName === 'P' ? '0 0 18px' : '0';
     }
 
     if (tag === 'a') {
@@ -653,7 +794,7 @@ function decorateCodeBlocks(root, theme) {
   });
 }
 
-function renderCodeBlockImage(codeText, theme) {
+function renderCodeBlockImage(codeText, theme, articleFontSize = state.fontSize) {
   const lines = codeText.split('\n');
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
@@ -664,7 +805,7 @@ function renderCodeBlockImage(codeText, theme) {
   const verticalPadding = 20;
   const availableTextWidth = width - horizontalPadding * 2;
   const fontFamily = 'SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
-  let fontSize = Math.max(state.fontSize - 1, 14);
+  let fontSize = Math.max(articleFontSize - 1, 14);
 
   context.font = `${fontSize}px ${fontFamily}`;
   const widestLine = Math.max(...lines.map((line) => context.measureText(line || ' ').width));
@@ -735,27 +876,56 @@ function appendWechatCodeLines(container, codeText) {
 }
 
 function buildFullHtmlDocument() {
+  const heading = document.createElement('h1');
+  heading.textContent = buildLongArticle(state.markdown).title;
   return `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>微信公众号文章</title>
+    <title>${PLATFORMS[state.platform].label}</title>
   </head>
   <body>
-    ${buildWechatHtml()}
+    ${state.platform === 'wechat' ? '' : heading.outerHTML}
+    ${buildPlatformHtml()}
   </body>
 </html>`;
 }
 
-function copyPreviewSelection() {
-  const range = document.createRange();
-  range.selectNodeContents(els.previewContent);
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-  document.execCommand('copy');
-  selection.removeAllRanges();
+async function writeClipboard(html, text) {
+  try {
+    if (html && navigator.clipboard?.write && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })]);
+    } else if (!html && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else throw new Error('Clipboard API unavailable');
+    return;
+  } catch {
+    // Supply the exact payload on fallback, including title-only and image-code copies.
+    const fallback = document.createElement('textarea');
+    fallback.value = text;
+    fallback.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.append(fallback);
+    const focused = document.activeElement;
+    fallback.select();
+    const onCopy = event => {
+      if (!event.clipboardData) return;
+      event.preventDefault();
+      event.clipboardData.setData('text/plain', text);
+      if (html) event.clipboardData.setData('text/html', html);
+    };
+    document.addEventListener('copy', onCopy);
+    try {
+      if (!document.execCommand('copy')) throw new Error('Copy failed');
+    } finally {
+      document.removeEventListener('copy', onCopy);
+      fallback.remove();
+      focused?.focus();
+    }
+  }
 }
 
 function getStatsText(value) {

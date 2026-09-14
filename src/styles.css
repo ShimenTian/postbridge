@@ -170,8 +170,15 @@ button {
 
 .preview-panel {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
 }
+
+[hidden] { display: none !important; }
+.native-article { line-height: 1.85; overflow-wrap: anywhere; }
+.native-article p { margin: 0 0 18px; }
+.native-article h1, .native-article h2, .native-article h3 { line-height: 1.5; margin: 24px 0 14px; }
+.native-article img { max-width: 100%; height: auto; }
+.native-article blockquote { margin: 18px 0; padding-left: 16px; border-left: 3px solid #cfd8d0; }
 
 .panel-header {
   display: flex;
@@ -348,3 +355,13 @@ button {
     padding: 18px 14px;
   }
 }
+
+#codeImagesDialog { width: min(760px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; padding: 24px; border: 1px solid #d9e0d8; border-radius: 12px; color: #26323b; }
+#codeImagesDialog::backdrop { background: rgba(0, 0, 0, .35); }
+.image-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.image-dialog-header h2 { margin: 0; font-size: 20px; }
+#codeImagesDialog p { font-size: 14px; line-height: 1.7; color: #667085; }
+#codeImagesList img { display: block; max-width: 100%; height: auto; margin-bottom: 12px; }
+#codeImagesList section { margin: 24px 0; }
+#codeImagesList h3 { font-size: 15px; }
+#codeImagesList a { margin-left: 8px; text-decoration: none; }
